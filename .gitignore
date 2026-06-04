@@ -1,3 +1,7 @@
+# ──────────────────────────────────────────────────────────────────────
+# Axiom Red-Team — .gitignore
+# ──────────────────────────────────────────────────────────────────────
+
 # Dependencies
 node_modules/
 frontend/.expo/
@@ -5,32 +9,35 @@ frontend/dist/
 backend/__pycache__/
 backend/*.pyc
 backend/.pytest_cache/
+.ruff_cache/
 
 # Build outputs
 *.log
 *.pid
 .DS_Store
 
-# Local cache / state
+# Local cache / scratch dirs
 runtime_workspace/
-/tmp/
 .cache/
 
 # Editor
 .vscode/
 .idea/
 
-# Keep .env files as they are protected per platform conventions
-# (Do NOT ignore /backend/.env or /frontend/.env)
+# NOTE: .env files ARE tracked intentionally — the Emergent platform
+# expects MONGO_URL / DB_NAME / EXPO_PUBLIC_* to come with the repo.
+# Sensitive overrides should go in `.env.local` (ignored below).
+*.env.local
+.env.local
 
-# Wordlists are large — not committed
-backend/wordlists/
-
-# Keep .emergent (platform-managed)
-.env
-.env.*
-*.env
+# Secret material that should never be committed
 credentials.json
 *.pem
 *.key
 .credentials
+
+# Wordlists (rockyou is 130 MB — installed at runtime instead)
+backend/wordlists/
+
+# Platform-managed (keep)
+# .emergent/
