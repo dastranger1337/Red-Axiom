@@ -33,19 +33,62 @@ EXEC_TIMEOUT = int(os.environ.get("EXEC_TIMEOUT_SECONDS", "120"))
 
 
 # ── Install red-team CLI tools on every startup (container /usr is ephemeral) ──
-def _install_tools_async():
+INSTALL_LOCK = "/tmp/axiom-install.lock"
+INSTALL_DONE = "/tmp/axiom-install.done"
+
+
+def _install_tools_blocking_once():
+    """Install tools at startup. Uses /tmp/.done sentinel + /tmp/.lock to make
+    it idempotent across uvicorn reloader children — only the first process
+    actually runs apt, the rest no-op."""
+    # If a prior process already finished, skip entirely
+    if os.path.exists(INSTALL_DONE):
+        return
+    # Best-effort exclusive lock
+    try:
+        import fcntl
+        lock_fd = open(INSTALL_LOCK, "w")
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            # Another worker is installing — just wait until it finishes
+            for _ in range(180):  # up to 3 minutes
+                if os.path.exists(INSTALL_DONE):
+                    return
+                import time
+                time.sleep(1)
+            return
+    except Exception:
+        lock_fd = None
+
     try:
         script = Path(__file__).parent / "install_tools.sh"
-        subprocess.Popen(
+        subprocess.run(
             ["bash", str(script)],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            start_new_session=True,
+            check=False,
+            timeout=300,
         )
+        # Sentinel so reloader siblings + future restarts skip fast
+        Path(INSTALL_DONE).touch()
     except Exception as e:
-        print(f"[startup] install_tools.sh failed to spawn: {e}")
+        print(f"[startup] install_tools failed: {e}")
+    finally:
+        if lock_fd is not None:
+            try:
+                import fcntl
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                lock_fd.close()
+            except Exception:
+                pass
 
-threading.Thread(target=_install_tools_async, daemon=True).start()
+
+# Kick off install in a background thread so the server starts immediately;
+# the first request that arrives before install finishes will simply wait
+# for the binary to appear (or returns "command not found" which the next
+# call recovers from after the installer finishes).
+threading.Thread(target=_install_tools_blocking_once, daemon=True).start()
 
 
 app = FastAPI(title="Axiom Red-Team Runtime", version="2.5.0")
@@ -122,7 +165,7 @@ async def _run(cmd: list[str], cwd: Path, stdin_data: Optional[str], timeout: in
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
-            stdin=asyncio.subprocess.PIPE,  # always pipe stdin so tools can detect "no tty"
+            stdin=asyncio.subprocess.PIPE if stdin_data is not None else asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(cwd),
@@ -131,7 +174,7 @@ async def _run(cmd: list[str], cwd: Path, stdin_data: Optional[str], timeout: in
         )
         try:
             stdout, stderr = await asyncio.wait_for(
-                proc.communicate(input=(stdin_data.encode() if stdin_data else b"")),
+                proc.communicate(input=(stdin_data.encode() if stdin_data is not None else None)),
                 timeout=timeout,
             )
         except asyncio.TimeoutError:
@@ -804,7 +847,6 @@ async def _god_stream(req: GodRequest) -> AsyncGenerator[bytes, None]:
                 "max_steps": max_steps, "model": model})
 
     transcript: list[dict] = []
-    last_assistant = ""
 
     for step_n in range(1, max_steps + 1):
         # Ask the model what to do next
@@ -837,7 +879,6 @@ async def _god_stream(req: GodRequest) -> AsyncGenerator[bytes, None]:
         except Exception as e:
             yield emit({"phase": "error", "step": step_n, "error": str(e)})
             return
-        last_assistant = raw
         decision = _parse_god_json(raw)
 
         if decision.get("done"):
@@ -1038,26 +1079,24 @@ SELFTEST_CASES = [
 @app.get("/api/selftest")
 async def selftest():
     """Run every tool through the same /api/exec pipeline and report pass/fail.
+    Tools run in PARALLEL (asyncio.gather) so the full sweep completes in seconds.
     This is the same code path used by chat AUTO-EXEC, the Terminal tab, and
     Agent runners — so a green selftest means all three callers work."""
-    results = []
-    passed = 0
-    failed = 0
-    for label, lang, code, must, max_s in SELFTEST_CASES:
+    async def _one(label: str, lang: str, code: str, must: str, max_s: int):
         r = await execute_code(lang, code, None, max_s)
         out_lower = (r.get("output") or "").lower()
         ok = (r.get("exitCode") == 0) and (must.lower() in out_lower)
-        results.append({
+        return {
             "tool": label,
             "ok": ok,
             "exitCode": r.get("exitCode"),
             "durationMs": r.get("durationMs"),
             "snippet": (r.get("output") or "")[:240],
-        })
-        if ok:
-            passed += 1
-        else:
-            failed += 1
+        }
+
+    results = await asyncio.gather(*[_one(*c) for c in SELFTEST_CASES])
+    passed = sum(1 for r in results if r["ok"])
+    failed = len(results) - passed
     return {
         "summary": {"total": len(results), "passed": passed, "failed": failed,
                     "pass_rate": round(passed / len(results) * 100, 1) if results else 0},
