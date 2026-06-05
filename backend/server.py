@@ -464,8 +464,8 @@ async def api_chat(req: ChatRequest):
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    provider = (req.provider or DEFAULT_PROVIDER).lower()
-    model = req.model or DEFAULT_MODEL
+    provider = (req.provider or os.environ.get("DEFAULT_LLM_PROVIDER", DEFAULT_PROVIDER)).lower()
+    model = req.model or os.environ.get("DEFAULT_LLM_MODEL", DEFAULT_MODEL)
     return StreamingResponse(
         _stream_emergent(provider, model, messages),
         media_type="text/event-stream",
@@ -969,39 +969,154 @@ async def api_get_secrets(request: Request):
     # Read the frontend's .env so SUPABASE_URL / SUPABASE_ANON_KEY can be
     # displayed alongside backend-side AI credentials. The file is small;
     # parse it on every call so edits are reflected immediately.
-    frontend_env = {}
-    try:
-        env_path = Path("/app/frontend/.env")
-        if env_path.exists():
-            for line in env_path.read_text().splitlines():
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                k, _, v = line.partition("=")
-                frontend_env[k.strip()] = v.strip().strip('"').strip("'")
-    except Exception:
-        pass
+    frontend_env = _read_dotenv(Path("/app/frontend/.env"))
+    backend_env  = _read_dotenv(Path("/app/backend/.env"))  # picks up live edits
 
     secrets = {
         # ── AI credentials (backend-side, never previously exposed to client) ──
-        "ONSPACE_AI_API_KEY": os.environ.get("EMERGENT_LLM_KEY", ""),
+        "ONSPACE_AI_API_KEY": backend_env.get("EMERGENT_LLM_KEY") or os.environ.get("EMERGENT_LLM_KEY", ""),
+        "EMERGENT_LLM_KEY":   backend_env.get("EMERGENT_LLM_KEY") or os.environ.get("EMERGENT_LLM_KEY", ""),
         "ONSPACE_AI_BASE_URL": (
-            os.environ.get("ONSPACE_AI_BASE_URL")
+            backend_env.get("ONSPACE_AI_BASE_URL")
+            or os.environ.get("ONSPACE_AI_BASE_URL")
             or "https://integrations.emergentagent.com/llm"
         ),
         # ── Supabase (mirrored from the frontend .env so the UI shows them) ──
         "SUPABASE_URL": frontend_env.get("EXPO_PUBLIC_SUPABASE_URL", ""),
         "SUPABASE_ANON_KEY": frontend_env.get("EXPO_PUBLIC_SUPABASE_ANON_KEY", ""),
-        "SUPABASE_SERVICE_ROLE_KEY": os.environ.get("SUPABASE_SERVICE_ROLE_KEY", ""),
-        "SUPABASE_DB_URL": os.environ.get("SUPABASE_DB_URL", ""),
+        "SUPABASE_SERVICE_ROLE_KEY": backend_env.get("SUPABASE_SERVICE_ROLE_KEY") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY", ""),
+        "SUPABASE_DB_URL": backend_env.get("SUPABASE_DB_URL") or os.environ.get("SUPABASE_DB_URL", ""),
         # ── AXIOM runtime (extra context for operators) ──
         "AXIOM_RUNTIME_URL": frontend_env.get("EXPO_PUBLIC_AXIOM_RUNTIME_URL", ""),
-        "MONGO_URL": os.environ.get("MONGO_URL", ""),
-        "DB_NAME": os.environ.get("DB_NAME", ""),
-        "DEFAULT_LLM_PROVIDER": os.environ.get("DEFAULT_LLM_PROVIDER", ""),
-        "DEFAULT_LLM_MODEL": os.environ.get("DEFAULT_LLM_MODEL", ""),
+        "MONGO_URL": backend_env.get("MONGO_URL") or os.environ.get("MONGO_URL", ""),
+        "DB_NAME": backend_env.get("DB_NAME") or os.environ.get("DB_NAME", ""),
+        "DEFAULT_LLM_PROVIDER": backend_env.get("DEFAULT_LLM_PROVIDER") or os.environ.get("DEFAULT_LLM_PROVIDER", ""),
+        "DEFAULT_LLM_MODEL": backend_env.get("DEFAULT_LLM_MODEL") or os.environ.get("DEFAULT_LLM_MODEL", ""),
     }
     return {"secrets": secrets, "ok": True}
+
+
+def _read_dotenv(p: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
+    try:
+        if p.exists():
+            for line in p.read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                out[k.strip()] = v.strip().strip('"').strip("'")
+    except Exception:
+        pass
+    return out
+
+
+def _write_dotenv(p: Path, updates: dict[str, str]) -> None:
+    """Idempotent .env writer: preserves existing keys (and order/comments-ish),
+    replaces values for keys in `updates`, appends new keys at the end."""
+    lines: list[str] = []
+    existing_keys: set[str] = set()
+    if p.exists():
+        for line in p.read_text().splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                lines.append(line)
+                continue
+            k = stripped.split("=", 1)[0].strip()
+            existing_keys.add(k)
+            if k in updates:
+                lines.append(f"{k}={updates[k]}")
+            else:
+                lines.append(line)
+    for k, v in updates.items():
+        if k not in existing_keys:
+            lines.append(f"{k}={v}")
+    p.write_text("\n".join(lines) + ("\n" if lines and lines[-1] else ""))
+
+
+# Allowlist of editable keys per file so users can't break the runtime
+EDITABLE_BACKEND_KEYS = {
+    "EMERGENT_LLM_KEY",
+    "ONSPACE_AI_BASE_URL",
+    "DEFAULT_LLM_PROVIDER",
+    "DEFAULT_LLM_MODEL",
+    "MONGO_URL",
+    "DB_NAME",
+    "EXEC_TIMEOUT_SECONDS",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_DB_URL",
+}
+EDITABLE_FRONTEND_KEYS = {
+    "EXPO_PUBLIC_SUPABASE_URL",
+    "EXPO_PUBLIC_SUPABASE_ANON_KEY",
+    "EXPO_PUBLIC_AXIOM_RUNTIME_URL",
+}
+
+
+class SetSecretsRequest(BaseModel):
+    secrets: dict[str, str]
+
+
+@app.post("/api/functions/v1/set-secrets")
+async def api_set_secrets(req: SetSecretsRequest):
+    """Persist edits to backend/.env (server keys) and frontend/.env
+    (EXPO_PUBLIC_*). Restarts the backend process so the new values
+    are picked up by the running app."""
+    backend_updates: dict[str, str] = {}
+    frontend_updates: dict[str, str] = {}
+    rejected: list[str] = []
+
+    for k, v in (req.secrets or {}).items():
+        if k in EDITABLE_BACKEND_KEYS:
+            backend_updates[k] = v
+            # Reflect immediately for the in-process env so subsequent calls see it
+            os.environ[k] = v
+        elif k in EDITABLE_FRONTEND_KEYS:
+            frontend_updates[k] = v
+        else:
+            rejected.append(k)
+
+    if backend_updates:
+        _write_dotenv(Path("/app/backend/.env"), backend_updates)
+    if frontend_updates:
+        _write_dotenv(Path("/app/frontend/.env"), frontend_updates)
+
+    return {
+        "ok": True,
+        "updated": {
+            "backend": list(backend_updates.keys()),
+            "frontend": list(frontend_updates.keys()),
+        },
+        "rejected": rejected,
+        "note": "Backend changes are live in-process. Frontend (.env) changes only apply after `yarn build:web` rebuilds the static bundle.",
+    }
+
+
+# ── Available AI models (presets for the Config picker) ───────────────────
+EMERGENT_MODELS = {
+    "anthropic": [
+        {"id": "claude-sonnet-4-5-20250929",  "label": "Claude Sonnet 4.5",  "tier": "best"},
+        {"id": "claude-haiku-4-5-20251001",   "label": "Claude Haiku 4.5",   "tier": "fast"},
+        {"id": "claude-opus-4-5-20251101",    "label": "Claude Opus 4.5",    "tier": "deep"},
+    ],
+    "openai": [
+        {"id": "gpt-5.2",                     "label": "GPT-5.2",            "tier": "best"},
+        {"id": "gpt-4o",                      "label": "GPT-4o",             "tier": "balanced"},
+        {"id": "gpt-4o-mini",                 "label": "GPT-4o mini",        "tier": "fast"},
+    ],
+    "gemini": [
+        {"id": "gemini-3-pro",                "label": "Gemini 3 Pro",       "tier": "best"},
+        {"id": "gemini-3-flash",              "label": "Gemini 3 Flash",     "tier": "fast"},
+    ],
+}
+
+
+@app.get("/api/models")
+async def api_models():
+    """List Emergent-managed LLMs the operator can pick from for the
+    default AXIOM chat/agent path. The custom-OpenAI passthrough stays
+    separate (configured by the user in the Config → AI section)."""
+    return {"providers": EMERGENT_MODELS}
 
 
 @app.post("/functions/v1/get-secrets")

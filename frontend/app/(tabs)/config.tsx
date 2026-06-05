@@ -24,6 +24,7 @@ import { loadSessions } from '@/services/sessionStorage';
 import { MITRE_TECHNIQUES, MITRE_TACTICS } from '@/constants/mitre';
 import { PROMPT_TEMPLATES } from '@/constants/prompts';
 import { getGodMode, setGodMode } from '@/services/godUser';
+import { SecretsEditor } from '@/components/config/SecretsEditor';
 
 const MONO = Platform.OS === 'ios' ? 'Menlo' : 'monospace';
 
@@ -867,7 +868,25 @@ export default function ConfigScreen() {
         {/* ══════════════════════ ENV VARS ══════════════════════ */}
         {activeSection === 'env' && (
           <>
-            <SectionHeader label="CLIENT-SIDE ENV VARS" color="#ffcc00" icon="phone-iphone" />
+            <SectionHeader label="EDIT KEYS · TOKENS · ENDPOINTS" color="#ffcc00" icon="edit" />
+            <View style={[styles.envNote, { borderColor: '#ffcc0044', backgroundColor: '#ffcc000a' }]}>
+              <MaterialIcons name="info-outline" size={12} color="#ffcc00" />
+              <Text style={styles.envNoteText}>
+                Live-editable runtime config. Backend changes apply instantly to the running process. Frontend changes (Supabase / runtime URL) apply after the next bundle rebuild.
+              </Text>
+            </View>
+
+            <SecretsEditor
+              secrets={serverSecrets}
+              loaded={secretsLoaded}
+              loading={secretsLoading}
+              onRefresh={loadServerSecrets}
+              onSaved={loadServerSecrets}
+              revealed={revealedKeys}
+              toggleReveal={toggleReveal}
+            />
+
+            <SectionHeader label="CLIENT-SIDE ENV VARS (READ-ONLY)" color="#ffcc00" icon="phone-iphone" />
             <View style={styles.envNote}>
               <MaterialIcons name="info-outline" size={12} color="#ffcc00" />
               <Text style={styles.envNoteText}>Client variables are bundled into the app binary and accessible at runtime via process.env. Do NOT store secrets here.</Text>
