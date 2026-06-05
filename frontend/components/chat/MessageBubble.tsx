@@ -1,7 +1,7 @@
 import React, { memo } from 'react';
 import { View, Text, StyleSheet, Platform, Pressable, ScrollView } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
 import { Message } from '@/services/aiService';
 import { Colors, Typography, Spacing, Radius } from '@/constants/theme';

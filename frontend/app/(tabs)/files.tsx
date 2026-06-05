@@ -8,7 +8,7 @@ import {
   Modal, ScrollView, Platform, Share, ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/theme';
 import { loadAttacks, SavedAttack } from '@/services/attackStorage';
 import { loadExecLog, ExecLogEntry, exportExecLog } from '@/services/executionLog';

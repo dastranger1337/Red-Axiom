@@ -93,6 +93,29 @@ threading.Thread(target=_install_tools_blocking_once, daemon=True).start()
 
 app = FastAPI(title="Axiom Red-Team Runtime", version="2.5.0")
 
+
+# ── Shared httpx client for custom-OpenAI passthrough ────────────────────
+# Reusing a single client lets us pool keep-alive TCP connections instead of
+# doing the TLS handshake on every chat turn (~150 ms saved per call to most
+# OpenAI-compatible providers).
+_HTTPX_CLIENT: Optional[httpx.AsyncClient] = None
+
+
+@app.on_event("startup")
+async def _startup_httpx() -> None:
+    global _HTTPX_CLIENT
+    _HTTPX_CLIENT = httpx.AsyncClient(
+        timeout=httpx.Timeout(120.0, connect=10.0),
+        limits=httpx.Limits(max_keepalive_connections=20, max_connections=50),
+    )
+
+
+@app.on_event("shutdown")
+async def _shutdown_httpx() -> None:
+    if _HTTPX_CLIENT is not None:
+        await _HTTPX_CLIENT.aclose()
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -342,31 +365,32 @@ def _openai_chunk(delta_text: str, finish: Optional[str] = None) -> dict:
 
 async def _stream_custom_openai(base_url: str, api_key: str, model: str,
                                 messages: list[dict]) -> AsyncGenerator[bytes, None]:
-    """Pass-through streaming to a user-provided OpenAI-compatible endpoint."""
+    """Pass-through streaming to a user-provided OpenAI-compatible endpoint.
+    Uses the shared module-level httpx client for keep-alive connection reuse."""
     url = base_url.rstrip("/") + "/chat/completions"
     payload = {"model": model, "messages": messages, "stream": True}
     try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
-            async with client.stream(
-                "POST", url,
-                json=payload,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                    "Accept": "text/event-stream",
-                },
-            ) as r:
-                if r.status_code != 200:
-                    body = await r.aread()
-                    err = body.decode("utf-8", errors="replace")[:500]
-                    yield _sse(_openai_chunk(f"\n[Custom provider error {r.status_code}] {err}", "stop"))
-                    yield _sse_done()
-                    return
-                async for line in r.aiter_lines():
-                    if not line:
-                        continue
-                    # Pass SSE through verbatim; the frontend parser handles `data: {...}`
-                    yield (line + "\n\n").encode()
+        client = _HTTPX_CLIENT or httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0))
+        async with client.stream(
+            "POST", url,
+            json=payload,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+                "Accept": "text/event-stream",
+            },
+        ) as r:
+            if r.status_code != 200:
+                body = await r.aread()
+                err = body.decode("utf-8", errors="replace")[:500]
+                yield _sse(_openai_chunk(f"\n[Custom provider error {r.status_code}] {err}", "stop"))
+                yield _sse_done()
+                return
+            async for line in r.aiter_lines():
+                if not line:
+                    continue
+                # Pass SSE through verbatim; the frontend parser handles `data: {...}`
+                yield (line + "\n\n").encode()
         yield _sse_done()
     except Exception as e:
         yield _sse(_openai_chunk(f"\n[Custom provider exception] {e}", "stop"))

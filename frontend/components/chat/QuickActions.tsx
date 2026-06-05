@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ScrollView, Pressable, Text, StyleSheet, View } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Colors, Typography, Spacing, Radius } from '@/constants/theme';
 
 type Category = 'Recon' | 'Exploit' | 'PostEx' | 'Evasion' | 'Cloud' | 'HW';

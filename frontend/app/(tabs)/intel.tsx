@@ -8,7 +8,7 @@ import {
   TextInput, Modal, FlatList, Dimensions, ActivityIndicator, Share, Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
 import { useChatContext } from '@/hooks/useChatContext';
 import { MITRE_TACTICS, MITRE_TECHNIQUES, MitreTactic, MitreTechnique } from '@/constants/mitre';

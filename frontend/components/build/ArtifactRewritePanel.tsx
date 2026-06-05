@@ -12,7 +12,7 @@ import React, { useState, useCallback, useMemo } from 'react';
 import {
   View, Text, ScrollView, Pressable, ActivityIndicator, Platform, StyleSheet,
 } from 'react-native';
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Colors, Typography, Spacing, Radius } from '@/constants/theme';
 
 const MONO = Platform.OS === 'ios' ? 'Menlo' : 'monospace';

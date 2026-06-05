@@ -13,7 +13,7 @@ import {
   ScrollView,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useChatContext } from '@/hooks/useChatContext';
 import { useRouter } from 'expo-router';
 import { useAuth } from '@/template';

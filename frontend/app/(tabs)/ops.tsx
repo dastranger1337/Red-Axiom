@@ -20,7 +20,7 @@ import {
   Easing,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useRouter } from 'expo-router';
 import { useChatContext } from '@/hooks/useChatContext';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/theme';

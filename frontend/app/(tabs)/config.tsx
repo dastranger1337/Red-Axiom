@@ -10,7 +10,7 @@ import {
   KeyboardAvoidingView, Platform, Animated, Easing,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/theme';
 import {

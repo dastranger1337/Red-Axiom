@@ -18,7 +18,7 @@ import {
   Platform,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/theme';
 import { appendExecLog } from '@/services/executionLog';
 import { useChatContext } from '@/hooks/useChatContext';

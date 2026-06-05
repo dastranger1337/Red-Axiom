@@ -9,7 +9,7 @@ import {
   Platform, ActivityIndicator, TextInput, Share,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as Clipboard from 'expo-clipboard';
 import { Colors, Typography, Spacing, Radius } from '@/constants/theme';
 import { ArtifactRewritePanel } from '@/components/build/ArtifactRewritePanel';
@@ -207,7 +207,7 @@ export default function RootScreen() {
     path: 'app/(tabs)/_layout.tsx',
     category: 'Navigation',
     description: 'Tab navigator — 7 tabs: CHAT, TERM, OPS, INTEL, FILES, CONFIG, BUILD',
-    content: `import { MaterialIcons } from '@expo/vector-icons';
+    content: `import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Tabs } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Platform } from 'react-native';
@@ -277,7 +277,7 @@ import {
   ActivityIndicator, Animated, Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useAuth, useAlert } from '@/template';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/theme';
 

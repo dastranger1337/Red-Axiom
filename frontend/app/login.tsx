@@ -10,7 +10,7 @@ import {
   ActivityIndicator, Animated, Easing,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { MaterialIcons } from '@expo/vector-icons';
+import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useAuth, useAlert } from '@/template';
 import { Colors, Typography, Spacing, Radius, Shadow } from '@/constants/theme';
 import { isGodCredential, setGodSession } from '@/services/godUser';
